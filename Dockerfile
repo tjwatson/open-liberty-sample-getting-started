@@ -22,4 +22,6 @@ COPY --chown=1001:0 resources/ /output/resources/
 
 COPY --chown=1001:0 target/*.war /config/apps/
 
-RUN configure.sh && rm -rf /output/resources/security/
+#RUN configure.sh && rm -rf /output/resources/security/
+RUN configure.sh
+

@@ -1,0 +1,33 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: IMAGE_NAME-deployment-knative
+  labels:
+    app: IMAGE_NAME
+spec:
+  template:
+    metadata:
+      labels:
+        app: IMAGE_NAME
+    spec:
+      containers:
+      - image: REPO_HOST/IMAGE_NAME
+        imagePullPolicy: IfNotPresent
+        name: app
+        ports:
+        - containerPort: 9080
+        resources:
+          limits:
+            cpu: 1
+            memory: 512Mi
+          requests:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          capabilities:
+            add:
+            - CHECKPOINT_RESTORE
+            - SETPCAP
+            drop:
+            - ALL
+
