@@ -5,7 +5,6 @@ ARG REVISION=SNAPSHOT
 COPY --chown=1001:0 src/main/liberty/config/ /config/
 COPY --chown=1001:0 resources/ /output/resources/
 COPY --chown=1001:0 target/*.war /config/apps/
-COPY --chown=1001:0 server /opt/ol/wlp/bin/server
 
 RUN configure.sh
 
