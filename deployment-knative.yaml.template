@@ -1,7 +1,7 @@
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: IMAGE_NAME-deployment-knative
+  name: IMAGE_NAME
   labels:
     app: IMAGE_NAME
 spec:

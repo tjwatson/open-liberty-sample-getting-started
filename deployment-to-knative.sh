@@ -20,6 +20,6 @@ if [ -z "$REPO_HOST" ]; then
 fi
 
 
-cat deployment-knative.yaml.template | sed "s|IMAGE_NAME|$IMAGE_NAME|g" | sed "s|REPO_HOST|$REPO_HOST|g" > deployment-knative.yaml
-kubectl apply -f deployment-knative.yaml
+cat deployment-knative.yaml.template | sed "s|IMAGE_NAME|$IMAGE_NAME|g" | sed "s|REPO_HOST|$REPO_HOST|g" > "deployment-knative-$IMAGE_NAME.yaml"
+kubectl apply -f  "deployment-knative-$IMAGE_NAME.yaml"
 
