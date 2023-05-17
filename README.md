@@ -86,3 +86,130 @@ mvnw failsafe:integration-test
 
 To view the test results, look at the console output or look under 
 directory  `target/failsafe-reports`
+
+## Instanton with AWS EKS and Knative
+
+### Build the application WAR
+```
+mvn package
+```
+### Containerize the Application with InstantOn
+For demo purposes we will create two containers, one without InstantOn and one that adds a layer with InstantOn for the application.  There are two Dockerfiles for doing this.  The original `Dockerfile` which does the typical steps to containerize the Open Liberty application:
+```
+FROM icr.io/appcafe/open-liberty:beta-instanton
+ARG VERSION=1.0
+ARG REVISION=SNAPSHOT
+
+COPY --chown=1001:0 src/main/liberty/config/ /config/
+COPY --chown=1001:0 resources/ /output/resources/
+COPY --chown=1001:0 target/*.war /config/apps/
+
+RUN configure.sh
+```
+Then there is the `Dockerfile.instanton` which adds one more layer with an additonal step at the end to do the checkpoint at `applications`:
+
+```
+FROM icr.io/appcafe/open-liberty:beta-instanton
+ARG VERSION=1.0
+ARG REVISION=SNAPSHOT
+
+COPY --chown=1001:0 src/main/liberty/config/ /config/
+COPY --chown=1001:0 resources/ /output/resources/
+COPY --chown=1001:0 target/*.war /config/apps/
+
+RUN configure.sh
+
+RUN checkpoint.sh applications
+```
+
+To build the original application container without InstantOn run the followoing:
+
+```
+./build-og.sh
+```
+After that completes then run the following to build the InstantOn layer:
+```
+./build-onestep-instanton.sh
+```
+When building the InstantOn image you will notice it reusing the layers created from the original application image and only adding one new layer that containers the checkpoint for the applcation.
+
+### Run the Application Containers Locally
+
+Now you can run the applications locally using `podman`.  When they are started you can access the application at: http://localhost:9080/
+
+#### Running the original Application
+```
+./run-og.sh
+```
+This typically comes up in 5 seconds.
+
+#### Running the InstantOn Application
+```
+./run-instanton.sh
+```
+This typically comes up in less than 500 milliseconds.  You can look at the `/run-instanton.sh` for the additional Linux capabilities that had to be set for the application to restore successfully.
+
+### Setup an AWS Cluster with Knative
+
+Next setup your AWS credentials such that you can create clusters on AWS EKS and push application images to ECS (Container registry) by following the steps from the Open Liberty InstantOn AWS blog: https://openliberty.io/blog/2023/02/20/aws-instant-on.html
+After setting up your AWS account and credentials run:
+```
+./create-cluster.sh -n <your cluster name>
+```
+This will take 15 to 20 minutes to create your cluster.  After you verified your cluster is up you need to provision Knative to the cluster by running the following script:
+
+### Deploy Knative to Your Cluster
+
+```
+./configure-knative.sh
+```
+### Push Your Application Images to ECR
+
+Then push your two applications to ECR with tags you have available in ECR.  For example, with image names like this `XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com/getting-started` and `XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com/getting-started-instanton`
+
+### Deploy Your Two Applications to Your Cluster
+
+Then you would run:
+```
+./deployment-to-knative.sh -h XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com -i getting-started
+./deployment-to-knative.sh -h XXXXXXXXXXXX.dkr.ecr.us-east-1.amazonaws.com -i getting-started-instanton
+```
+
+### Discover Your Two Application Endpoint URLs
+
+Once it is all deployed you use kubectl get kservice to find the endpoints URL, for example:
+````
+# kubectl get kservice
+NAME                                 URL                                                                        LATESTCREATED                              LATESTREADY                                READY   REASON
+getting-started             http://getting-started.default.x.xxx.xxx.xxx.sslip.io             getting-started-00001             getting-started-00001             True    
+getting-started-instanton   http://getting-started-instanton.default.x.xxx.xxx.xxx.sslip.io   getting-started-instanton-00001   getting-started-instanton-00001   True
+````
+The two URLs are what you hit to bring the apps up:
+
+http://getting-started.default.x.xxx.xxx.xxx.sslip.io
+
+http://getting-started-instanton.default.x.xxx.xxx.xxx.sslip.io
+
+To see the pods running or not:
+```
+# kubectl get pods
+NAME                                                              READY   STATUS    RESTARTS   AGE
+getting-started-00001-deployment-57548d6594-5cvww        1/2     Running   0          9s
+getting-started-instanton-00001-deployment-5f68d4dtxwx   2/2     Running   0          16s
+```
+If the pods are still running you can look at the logs, for example:
+```
+kubectl logs getting-started-instanton-00001-deployment-5f68d4t56gb
+Defaulted container "app" out of: app, queue-proxy
+
+[AUDIT   ] CWWKZ0001I: Application io.openliberty.sample.getting.started started in 0.238 seconds.
+[AUDIT   ] CWWKT0016I: Web application available (default_host): http://tjwatson-getting-started-instanton-00001-deployment-5f68d4t56gb:9080/metrics/
+[AUDIT   ] CWWKT0016I: Web application available (default_host): http://tjwatson-getting-started-instanton-00001-deployment-5f68d4t56gb:9080/health/
+[AUDIT   ] CWWKT0016I: Web application available (default_host): http://tjwatson-getting-started-instanton-00001-deployment-5f68d4t56gb:9080/
+[AUDIT   ] CWWKT0016I: Web application available (default_host): http://tjwatson-getting-started-instanton-00001-deployment-5f68d4t56gb:9080/ibm/api/
+[AUDIT   ] CWWKC0452I: The Liberty server process resumed operation from a checkpoint in 0.335 seconds.
+[AUDIT   ] CWWKF0012I: The server installed the following features: [cdi-2.0, checkpoint-1.0, distributedMap-1.0, jaxrs-2.1, jaxrsClient-2.1, jndi-1.0, json-1.0, jsonp-1.1, monitor-1.0, mpConfig-2.0, mpHealth-3.1, mpMetrics-3.0, servlet-4.0, ssl-1.0].
+[AUDIT   ] CWWKF0011I: The defaultServer server is ready to run a smarter planet. The defaultServer server started in 0.364 seconds.
+```
+
+At this point you can wait for the applications to scale-to-zero.  Here Knative is configured to do that after about 30 seconds of inactivity.  Confirm you have no running pods with `kubectl get pods`.  If there are no pods running then Knative will have to startup a new pod when a new request comes in.  Now you can observe the differences in response time between the two applications.
